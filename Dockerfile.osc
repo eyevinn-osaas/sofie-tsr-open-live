@@ -1,0 +1,22 @@
+# Sofie playout gateway with the Open Live TSR plugin baked in, for Eyevinn Open Source Cloud.
+ARG GATEWAY_IMAGE=ghcr.io/sofie-automation/sofie-core-playout-gateway:v26.9.2
+
+FROM node:22 AS build
+WORKDIR /opt/sofie-tsr-open-live
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build && npm prune --omit=dev && rm -rf src scripts .git
+
+FROM ${GATEWAY_IMAGE}
+USER root
+RUN apk add --no-cache bash
+USER node
+ENV TSR_PLUGIN_PATHS=/opt/sofie-tsr-open-live
+# The gateway has no inbound API; its health endpoint gives the platform a port to probe.
+ENV HEALTH_PORT=8080
+EXPOSE 8080
+COPY --from=build /opt/sofie-tsr-open-live /opt/sofie-tsr-open-live
+COPY --chmod=755 osc-entrypoint.sh /usr/local/bin/osc-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/osc-entrypoint.sh"]
+CMD ["node", "dist/index.js"]
