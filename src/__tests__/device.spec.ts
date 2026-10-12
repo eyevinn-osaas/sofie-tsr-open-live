@@ -154,6 +154,28 @@ describe('OpenLiveDevice against a fake Open Live', () => {
 		}
 	})
 
+	test('takes the OSC token from OPEN_LIVE_OSC_PAT when the device setting is empty', async () => {
+		const realFetch = global.fetch
+		const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ token: 'env-sat', expiry: 9e9 }) })
+		global.fetch = fetchMock as any
+		process.env.OPEN_LIVE_OSC_PAT = 'env-pat'
+		try {
+			await device.init({ url: server.url, productionId: 'p1', authMode: 'osc', keepAliveIntervalMs: 0 })
+			await waitFor(() => device.connected)
+			expect(fetchMock.mock.calls[0][1].headers['x-pat-jwt']).toBe('Bearer env-pat')
+			expect(server.upgrades[0].protocol).toBe('osc.bearer,osc.bearer.env-sat')
+		} finally {
+			global.fetch = realFetch
+			delete process.env.OPEN_LIVE_OSC_PAT
+		}
+	})
+
+	test('reports a non-empty status message when connected', async () => {
+		await device.init({ url: server.url, productionId: 'p1', keepAliveIntervalMs: 0 })
+		await waitFor(() => device.connected)
+		expect(device.getStatus()).toEqual({ statusCode: 1, messages: ['Connected to production p1'] })
+	})
+
 	test('reconnects and resyncs after the socket drops', async () => {
 		await device.init({ url: server.url, productionId: 'p1', keepAliveIntervalMs: 0 })
 		await waitFor(() => device.connected)

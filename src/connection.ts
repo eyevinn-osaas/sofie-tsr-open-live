@@ -7,6 +7,13 @@ import type { OpenLiveFrame } from './state'
 /** Fixed OSC token-exchange endpoint (same as open-live's src/lib/osc-token.ts). */
 export const OSC_TOKEN_EXCHANGE_URL = 'https://token.svc.prod.osaas.io/servicetoken'
 const DEFAULT_OSC_SERVICE_ID = 'eyevinn-open-live'
+/**
+ * Gateway environment variables for credentials. The playout gateway logs every
+ * device's options at startup, so a token kept in the device settings ends up in
+ * plain text in the gateway log. Keep it here instead.
+ */
+export const OSC_PAT_ENV = 'OPEN_LIVE_OSC_PAT'
+export const OPEN_LIVE_API_KEY_ENV = 'OPEN_LIVE_API_KEY'
 const RECONNECT_MIN_MS = 1000
 const RECONNECT_MAX_MS = 15000
 
@@ -103,9 +110,13 @@ export class OpenLiveConnection extends EventEmitter<OpenLiveConnectionEvents> {
 
 	constructor(
 		private readonly options: OpenLiveOptions,
-		private readonly deps: { fetch?: typeof fetch; WebSocketImpl?: typeof WebSocket } = {}
+		private readonly deps: { fetch?: typeof fetch; WebSocketImpl?: typeof WebSocket; env?: NodeJS.ProcessEnv } = {}
 	) {
 		super()
+	}
+
+	private get env(): NodeJS.ProcessEnv {
+		return this.deps.env ?? process.env
 	}
 
 	get connected(): boolean {
@@ -164,15 +175,18 @@ export class OpenLiveConnection extends EventEmitter<OpenLiveConnectionEvents> {
 
 	private async authenticate(): Promise<{ headers: Record<string, string>; protocols: string[] }> {
 		switch (this.options.authMode ?? 'none') {
-			case 'apiKey':
-				if (!this.options.apiKey) throw new Error('authMode apiKey needs apiKey')
-				return { headers: { Authorization: `Bearer ${this.options.apiKey}` }, protocols: [] }
+			case 'apiKey': {
+				const apiKey = this.options.apiKey || this.env[OPEN_LIVE_API_KEY_ENV]
+				if (!apiKey) throw new Error(`authMode apiKey needs apiKey (device setting or ${OPEN_LIVE_API_KEY_ENV})`)
+				return { headers: { Authorization: `Bearer ${apiKey}` }, protocols: [] }
+			}
 			case 'osc': {
-				if (!this.options.oscPat) throw new Error('authMode osc needs oscPat')
+				const pat = this.options.oscPat || this.env[OSC_PAT_ENV]
+				if (!pat) throw new Error(`authMode osc needs an OSC token (${OSC_PAT_ENV} on the gateway, or oscPat)`)
 				// Refresh a minute before expiry; the SAT is only checked at upgrade time.
 				if (!this.sat || this.sat.expiry * 1000 - Date.now() < 60_000) {
 					this.sat = await exchangeOscToken(
-						this.options.oscPat,
+						pat,
 						this.options.oscServiceId || DEFAULT_OSC_SERVICE_ID,
 						this.deps.fetch
 					)

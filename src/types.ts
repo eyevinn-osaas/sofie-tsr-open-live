@@ -23,9 +23,9 @@ export interface OpenLiveOptions {
 	productionId: string
 	/** How to authenticate the controller WebSocket */
 	authMode?: OpenLiveAuthMode
-	/** Open Live API_KEY (authMode = apiKey) */
+	/** Open Live API_KEY (authMode = apiKey). Prefer OPEN_LIVE_API_KEY on the gateway */
 	apiKey?: string
-	/** OSC Personal Access Token, exchanged for a short-lived SAT (authMode = osc) */
+	/** OSC Personal Access Token, exchanged for a short-lived SAT (authMode = osc). Prefer OPEN_LIVE_OSC_PAT on the gateway */
 	oscPat?: string
 	/** OSC serviceId the SAT is scoped to. Default eyevinn-open-live */
 	oscServiceId?: string

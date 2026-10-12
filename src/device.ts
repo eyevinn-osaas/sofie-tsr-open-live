@@ -77,10 +77,12 @@ export class OpenLiveDevice implements Device<OpenLiveDeviceTypes, OpenLiveState
 
 	private connection: OpenLiveConnection | undefined
 	private lastError: string | undefined
+	private productionId = ''
 
 	constructor(private readonly context: DeviceContextAPI<OpenLiveDeviceTypes, OpenLiveState>) {}
 
 	async init(options: OpenLiveOptions): Promise<boolean> {
+		this.productionId = options.productionId
 		const conn = new OpenLiveConnection(options)
 		this.connection = conn
 
@@ -120,7 +122,8 @@ export class OpenLiveDevice implements Device<OpenLiveDeviceTypes, OpenLiveState
 	}
 
 	getStatus(): DeviceStatusInput {
-		if (this.connected) return { statusCode: StatusCode.GOOD, messages: [] }
+		// Always send a message: Sofie keeps showing the previous one when the list is empty.
+		if (this.connected) return { statusCode: StatusCode.GOOD, messages: [`Connected to production ${this.productionId}`] }
 		return {
 			statusCode: StatusCode.BAD,
 			messages: [this.lastError ? `Not connected to Open Live: ${this.lastError}` : 'Not connected to Open Live'],

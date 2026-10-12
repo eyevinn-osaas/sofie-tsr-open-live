@@ -61,14 +61,18 @@ Sofie Core and to Open Live.
 
 | Env var | Value |
 |---|---|
-| `CORE_HOST` / `CORE_PORT` | Sofie Core. On OSC, use Core's cluster-internal endpoint (see `describe-service-instance`), which skips the OSC auth gateway. Core's public URL needs an OSC token that the gateway cannot send. |
+| `CORE_HOST` / `CORE_PORT` | Sofie Core. On OSC, use Core's cluster-internal endpoint (see `describe-service-instance`), which skips the OSC auth gateway. Core listens on **8080** there. Core's public URL needs an OSC token that the gateway cannot send. |
 | `DEVICE_ID` / `DEVICE_TOKEN` | Any stable ID and secret. The gateway registers itself in Core; assign it to the studio in Sofie (Settings → Studio → Peripheral devices). |
 | `HEALTH_PORT` | `8080` (set in the image). `/healthz` and `/readyz`. |
+| `OPEN_LIVE_OSC_PAT` | OSC Personal Access Token used for the Open Live login (osc auth mode). Set it as a secret. |
+| `OPEN_LIVE_API_KEY` | Open Live API key (apiKey auth mode, self-hosted Open Live). |
 | `TSR_PLUGIN_PATHS` | Set in the image. |
 
-The Open Live device settings (URL, production ID, OSC token) are configured in Sofie, not
-here. With the Open Live blueprints, the URL and production ID come from the studio config
-and the operator adds the token in the device settings.
+The Open Live URL and production ID are device settings in Sofie (with the Open Live
+blueprints they come from the studio config). **Credentials belong on the gateway**, in
+`OPEN_LIVE_OSC_PAT` / `OPEN_LIVE_API_KEY`: the playout gateway logs every device's options at
+startup, so a token typed into Sofie's device settings ends up in plain text in the gateway
+log. The device settings still accept a token and it takes precedence when set.
 
 Unverified: whether OSC Core (26.6.0 at the time of writing) accepts a v26.9.2 gateway, and
 whether the health endpoint stays up while Core is unreachable (the gateway exits if it

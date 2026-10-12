@@ -3,7 +3,7 @@
 	"title": "Open Live Options",
 	"type": "object",
 	"properties": {
-		"url": { "type": "string", "ui:title": "Open Live backend URL", "ui:description": "e.g. https://<tenant>-<name>.eyevinn-open-live.auto.prod-se.osaas.io", "default": "" },
+		"url": { "type": "string", "ui:title": "Open Live backend URL", "ui:description": "Full https address of the Open Live backend, for example magnus-mylive.eyevinn-open-live.auto.prod-se.osaas.io", "default": "" },
 		"productionId": { "type": "string", "ui:title": "Production ID", "default": "" },
 		"authMode": {
 			"type": "string",
@@ -12,8 +12,8 @@
 			"tsEnumNames": ["None", "ApiKey", "Osc"],
 			"default": "osc"
 		},
-		"apiKey": { "type": "string", "ui:title": "API key (self-hosted Open Live)", "ui:sensitive": true, "default": "" },
-		"oscPat": { "type": "string", "ui:title": "OSC Personal Access Token", "ui:sensitive": true, "default": "" },
+		"apiKey": { "type": "string", "ui:title": "API key (self-hosted Open Live)", "ui:description": "Leave empty and set OPEN_LIVE_API_KEY on the gateway instead; values here are written to the gateway log", "ui:sensitive": true, "default": "" },
+		"oscPat": { "type": "string", "ui:title": "OSC Personal Access Token", "ui:description": "Leave empty and set OPEN_LIVE_OSC_PAT on the gateway instead; values here are written to the gateway log", "ui:sensitive": true, "default": "" },
 		"oscServiceId": { "type": "string", "ui:title": "OSC service ID", "default": "eyevinn-open-live" },
 		"ackTimeoutMs": { "type": "integer", "ui:title": "ACK timeout (ms)", "default": 5000, "minimum": 100 },
 		"keepAliveIntervalMs": { "type": "integer", "ui:title": "Keep-alive interval (ms, 0 = off)", "default": 30000, "minimum": 0 }
