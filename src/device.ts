@@ -143,14 +143,21 @@ export class OpenLiveDevice implements Device<OpenLiveDeviceTypes, OpenLiveState
 	async sendCommand(cwc: OpenLiveCommandWithContext): Promise<void> {
 		this.context.logger.debug(cwc)
 		if (!this.connection?.connected) return
+		const { accepted, executed } = this.connection.send(cwc.command)
 		try {
-			const res = await this.connection.send(cwc.command)
-			if (res.phase === 'accepted') {
-				this.context.logger.warning(`${cwc.command.type} accepted but not confirmed executed (${cwc.context})`)
-			}
+			// Only wait for validation: TSR needs commands sent in order, not executed in
+			// order, and waiting for execution delayed the next cut by ackTimeoutMs.
+			await accepted
 		} catch (e) {
 			this.context.commandError(e as Error, cwc)
+			return
 		}
+		executed.then(
+			(res) => {
+				if (res.phase === 'accepted') this.context.logger.debug(`${cwc.command.type} not confirmed executed (${cwc.context})`)
+			},
+			(e) => this.context.commandError(e as Error, cwc)
+		)
 	}
 
 	private async runAction(frame: { type: string } & Record<string, unknown>): Promise<ActionExecutionResult> {
@@ -158,7 +165,7 @@ export class OpenLiveDevice implements Device<OpenLiveDeviceTypes, OpenLiveState
 			return { result: ActionExecutionResultCode.Error, response: { key: 'Open Live is not connected' } }
 		}
 		try {
-			await this.connection.send(frame)
+			await this.connection.send(frame).executed
 			return { result: ActionExecutionResultCode.Ok }
 		} catch (e) {
 			return {

@@ -11,6 +11,10 @@ class FakeOpenLive {
 	readonly upgrades: Array<{ url?: string; auth?: string; protocol?: string }> = []
 	sockets: WebSocket[] = []
 	nack: Record<string, string> = {}
+	/** Command types answered with ACK accepted only (like Open Live's CLIP_* commands) */
+	acceptOnly = new Set<string>()
+	/** Command types NACKed after an ACK accepted */
+	lateNack: Record<string, string> = {}
 	seq = 0
 
 	constructor(private snapshot: any[]) {
@@ -32,6 +36,8 @@ class FakeOpenLive {
 				if (!msg.cmdId) return
 				if (this.nack[msg.type]) return send({ type: 'NACK', cmdId: msg.cmdId, error: this.nack[msg.type] })
 				send({ type: 'ACK', cmdId: msg.cmdId, phase: 'accepted' })
+				if (this.acceptOnly.has(msg.type)) return
+				if (this.lateNack[msg.type]) return send({ type: 'NACK', cmdId: msg.cmdId, error: this.lateNack[msg.type] })
 				send({ type: 'ACK', cmdId: msg.cmdId, phase: 'executed' })
 			})
 		})
@@ -184,6 +190,30 @@ describe('OpenLiveDevice against a fake Open Live', () => {
 		await waitFor(() => device.connected, 5000)
 		expect(ctx.resetToState).toHaveBeenCalledTimes(2)
 		expect(server.upgrades).toHaveLength(2)
+	})
+
+	test('a command that is only accepted does not hold back the next one', async () => {
+		server.acceptOnly.add('CLIP_PLAY')
+		await device.init({ url: server.url, productionId: 'p1', keepAliveIntervalMs: 0, ackTimeoutMs: 5000 })
+		await waitFor(() => device.connected)
+		const t0 = Date.now()
+		await device.sendCommand({ command: { type: 'CLIP_PLAY', mixerInput: 'video_in_6' }, context: 'clip', timelineObjId: 'o1' })
+		await device.sendCommand({ command: { type: 'CUT', mixerInput: 'video_in_6' }, context: 'cut', timelineObjId: 'o2' })
+		expect(Date.now() - t0).toBeLessThan(1000)
+		expect(server.received.map((m) => m.type)).toEqual(['CLIP_PLAY', 'CUT'])
+		expect(ctx.commandError).not.toHaveBeenCalled()
+	})
+
+	test('reports a NACK that arrives after ACK accepted', async () => {
+		server.lateNack.CUT = 'strom call failed'
+		await device.init({ url: server.url, productionId: 'p1', keepAliveIntervalMs: 0 })
+		await waitFor(() => device.connected)
+		await device.sendCommand({ command: { type: 'CUT', mixerInput: 'video_in_1' }, context: 'cut', timelineObjId: 'o1' })
+		await waitFor(() => ctx.commandError.mock.calls.length > 0)
+		expect(ctx.commandError).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'Open Live rejected CUT: strom call failed' }),
+			expect.objectContaining({ timelineObjId: 'o1' })
+		)
 	})
 
 	test('runMacro action sends MACRO_EXEC', async () => {

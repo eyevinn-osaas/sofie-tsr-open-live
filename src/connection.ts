@@ -44,6 +44,7 @@ interface Pending {
 	frame: OpenLiveFrame
 	sentAt: number
 	accepted: boolean
+	onAccepted: () => void
 	resolve: (r: CommandResult) => void
 	reject: (e: Error) => void
 	timer: NodeJS.Timeout
@@ -148,29 +149,66 @@ export class OpenLiveConnection extends EventEmitter<OpenLiveConnectionEvents> {
 		}
 	}
 
-	/** Send a command and wait for Open Live's ACK executed (or NACK). */
-	send(frame: OpenLiveFrame): Promise<CommandResult> {
-		if (!this.ws || !this.ready) return Promise.reject(new Error(`Not connected; dropped ${frame.type}`))
+	/**
+	 * Send a command. `accepted` settles as soon as Open Live has validated it (ACK
+	 * accepted, or a NACK), so a caller can keep commands in order without waiting for
+	 * execution. `executed` settles on ACK executed or NACK. Some commands (the CLIP_*
+	 * family) only report through state events; their `executed` resolves with phase
+	 * 'accepted' after ackTimeoutMs.
+	 */
+	send(frame: OpenLiveFrame): { accepted: Promise<void>; executed: Promise<CommandResult> } {
+		if (!this.ws || !this.ready) {
+			const err = new Error(`Not connected; dropped ${frame.type}`)
+			const executed = Promise.reject(err)
+			executed.catch(() => undefined)
+			return { accepted: Promise.reject(err), executed }
+		}
 		const cmdId = randomUUID()
 		const timeoutMs = this.options.ackTimeoutMs ?? 5000
-		return new Promise<CommandResult>((resolve, reject) => {
-			const sentAt = Date.now()
+		const sentAt = Date.now()
+		let acceptResolve!: () => void
+		let acceptReject!: (e: Error) => void
+		const accepted = new Promise<void>((res, rej) => {
+			acceptResolve = res
+			acceptReject = rej
+		})
+		const executed = new Promise<CommandResult>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				const p = this.pending.get(cmdId)
 				this.pending.delete(cmdId)
 				// accepted but never reported executed: treat as done, the device will
 				// see the resulting state event. Nothing at all is a real failure.
 				if (p?.accepted) resolve({ phase: 'accepted', latencyMs: Date.now() - sentAt })
-				else reject(new CommandTimeoutError(frame, timeoutMs))
+				else {
+					const err = new CommandTimeoutError(frame, timeoutMs)
+					acceptReject(err)
+					reject(err)
+				}
 			}, timeoutMs)
-			this.pending.set(cmdId, { frame, sentAt, accepted: false, resolve, reject, timer })
+			this.pending.set(cmdId, {
+				frame,
+				sentAt,
+				accepted: false,
+				onAccepted: acceptResolve,
+				resolve,
+				reject: (e) => {
+					acceptReject(e)
+					reject(e)
+				},
+				timer,
+			})
 			this.ws!.send(JSON.stringify({ ...frame, cmdId }), (err) => {
 				if (!err) return
 				clearTimeout(timer)
 				this.pending.delete(cmdId)
+				acceptReject(err)
 				reject(err)
 			})
 		})
+		// Callers may only await one of the two; never leave the other unhandled.
+		accepted.catch(() => undefined)
+		executed.catch(() => undefined)
+		return { accepted, executed }
 	}
 
 	private async authenticate(): Promise<{ headers: Record<string, string>; protocols: string[] }> {
@@ -266,10 +304,9 @@ export class OpenLiveConnection extends EventEmitter<OpenLiveConnectionEvents> {
 			case 'ACK': {
 				const p = this.pending.get(msg.cmdId)
 				if (!p) return
-				if (msg.phase === 'accepted') {
-					p.accepted = true
-					return
-				}
+				p.accepted = true
+				p.onAccepted()
+				if (msg.phase === 'accepted') return
 				clearTimeout(p.timer)
 				this.pending.delete(msg.cmdId)
 				p.resolve({ phase: 'executed', latencyMs: Date.now() - p.sentAt })
